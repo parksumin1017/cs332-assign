@@ -77,8 +77,14 @@ abstract class TweetSet {
    * Question: Should we implment this method here, or should it remain abstract
    * and be implemented in the subclasses?
    */
-  def descendingByRetweet: TweetList
-
+  def descendingByRetweet: TweetList = {
+    try {
+      val top = mostRetweeted
+      new Cons(top, remove(top).descendingByRetweet)
+    } catch {
+      case _: java.util.NoSuchElementException => Nil
+    }
+  }
 
   /**
    * The following methods are already implemented
@@ -110,8 +116,7 @@ abstract class TweetSet {
 
 class Empty extends TweetSet {
   override def mostRetweeted: Tweet = throw new java.util.NoSuchElementException("mostRetweeted on Empty")
-  def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet = ???
-  override def descendingByRetweet: TweetList = Nil
+  def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet = acc
 
   /**
    * The following methods are already implemented
@@ -128,15 +133,18 @@ class Empty extends TweetSet {
 
 class NonEmpty(elem: Tweet, left: TweetSet, right: TweetSet) extends TweetSet {
   override def mostRetweeted: Tweet = {
-    def maxRetweet(t1: Tweet, t2: Tweet): Tweet = if (t1.retweets > t2.retweets) t1 else t2
-    val leftMax = try left.mostRetweeted catch { case _: java.util.NoSuchElementException => elem }
+    def max(t1: Tweet, t2: Tweet): Tweet =
+      if (t1.retweets > t2.retweets) t1 else t2
+
+    val leftMax  = try left.mostRetweeted  catch { case _: java.util.NoSuchElementException => elem }
     val rightMax = try right.mostRetweeted catch { case _: java.util.NoSuchElementException => elem }
-    maxRetweet(elem, maxRetweet(leftMax, rightMax))
+    max(elem, max(leftMax, rightMax))
   }
-  def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet = ???
-  override def descendingByRetweet: TweetList = {
-    val most = mostRetweeted
-    new Cons(most, remove(most).descendingByRetweet)
+
+  def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet = {
+    val accWithElem = if (p(elem)) acc.incl(elem) else acc
+    val leftAcc     = left.filterAcc(p, accWithElem)
+    right.filterAcc(p, leftAcc)
   }
 
   /**
@@ -191,6 +199,10 @@ class Cons(val head: Tweet, val tail: TweetList) extends TweetList {
 object GoogleVsApple {
   val google = List("android", "Android", "galaxy", "Galaxy", "nexus", "Nexus")
   val apple = List("ios", "iOS", "iphone", "iPhone", "ipad", "iPad")
+
+  private def keywordContainingTweets(keywords: List[String]): TweetSet = {
+    TweetReader.allTweets.filter(tweet => keywords.exists(keyword => tweet.text.contains(keyword)))
+  }
 
   lazy val googleTweets: TweetSet = keywordContainingTweets(google)
   lazy val appleTweets: TweetSet = keywordContainingTweets(apple)
