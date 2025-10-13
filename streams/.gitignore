@@ -3,9 +3,3 @@
 
 # But not these directories/files
 !src/
-
-# Allow .gitignore itself
-!.gitignore
-
-# Optionally allow build.sbt and project config
-
