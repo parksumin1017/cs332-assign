@@ -26,10 +26,16 @@ trait NodeScala {
    *  response may take very long to finish.
    *
    *  @param exchange     the exchange used to write the response back
-   *  @param token        the cancellation token
+   *  @param token        the lation token
    *  @param body         the response to write back
    */
-  private def respond(exchange: Exchange, token: CancellationToken, response: Response): Unit = ???
+  private def respond(exchange: Exchange, token: CancellationToken, response: Response): Unit = {
+    for (part <- response) {
+      if (token.isCancelled) return
+      exchange.write(part)
+    }
+    exchange.close()
+  }
 
   /** A server:
    *  1) creates and starts an http listener
@@ -41,7 +47,36 @@ trait NodeScala {
    *  @param handler        a function mapping a request to a response
    *  @return               a subscription that can stop the server and all its asynchronous operations *entirely*
    */
-  def start(relativePath: String)(handler: Request => Response): Subscription = ???
+  def start(relativePath: String)(handler: Request => Response): Subscription = {
+    val listener = createListener(relativePath)
+    val subscription = listener.start()
+    val cts = CancellationTokenSource()
+
+    def processRequest(): Unit = {
+      if (!cts.cancellationToken.isCancelled) {
+        val reqFut = listener.nextRequest()
+        reqFut.onComplete {
+          case scala.util.Success((request, exchange)) =>
+            Future {
+              respond(exchange, cts.cancellationToken, handler(request))
+            }
+            processRequest()
+          case scala.util.Failure(_) =>
+            if (!cts.cancellationToken.isCancelled)
+              processRequest()
+        }
+      }
+    }
+
+    processRequest()
+
+    new Subscription {
+      def unsubscribe() = {
+        cts.unsubscribe()
+        subscription.unsubscribe()
+      }
+    }
+  }
 
 }
 
